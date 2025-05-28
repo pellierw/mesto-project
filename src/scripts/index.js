@@ -1,3 +1,8 @@
+import './../pages/index.css';
+
+import { getInitialCards, getUserInfo, updateUserInfo, addNewCard, likeCard, unlikeCard, deleteCard, updateAvatar } from './api.js';
+
+
 // @todo: Темплейт карточки
 const cardTemplate = document.querySelector('#card-template');
 
@@ -15,6 +20,13 @@ const profileDescription = document.querySelector('.profile__description');
 const editButton = document.querySelector('.profile__edit-button');
 const profileCloseButton = profilePopup.querySelector('.popup__close');
 
+const avatarPopup = document.querySelector('.popup_type_avatar');
+const avatarFormElement = avatarPopup.querySelector('.popup__form');
+const avatarInput = avatarFormElement.querySelector('.popup__input_type_avatar-url');
+const avatarCloseButton = avatarPopup.querySelector('.popup__close');
+const avatarEditButton = document.querySelector('.profile__image-edit'); // элемент иконки
+
+
 const cardFormElement = cardPopup.querySelector('.popup__form');
 const placeNameInput = cardFormElement.querySelector('.popup__input_type_card-name');
 const placeLinkInput = cardFormElement.querySelector('.popup__input_type_url');
@@ -25,7 +37,6 @@ const imageCloseButton = imagePopup.querySelector('.popup__close');
 const popupImage = imagePopup.querySelector('.popup__image');
 const popupCaption = imagePopup.querySelector('.popup__caption');
 
-// Добавим анимацию всем попапам
 document.querySelectorAll('.popup').forEach((popup) => {
   popup.classList.add('popup_is-animated');
 });
@@ -41,7 +52,6 @@ function closeModal(popup) {
   document.removeEventListener('keydown', closeByEsc);
 }
 
-// Закрытие по нажатию Esc
 function closeByEsc(evt) {
   if (evt.key === 'Escape') {
     const openedPopup = document.querySelector('.popup_is-opened');
@@ -49,7 +59,6 @@ function closeByEsc(evt) {
   }
 }
 
-// Закрытие по клику на оверлей
 function setupOverlayClose(popup) {
   popup.addEventListener('mousedown', (evt) => {
     if (evt.target === popup) closeModal(popup);
@@ -68,10 +77,28 @@ profileCloseButton.addEventListener('click', () => closeModal(profilePopup));
 
 function handleProfileFormSubmit(evt) {
   evt.preventDefault();
-  profileTitle.textContent = nameInput.value;
-  profileDescription.textContent = jobInput.value;
-  closeModal(profilePopup);
+
+  const submitButton = profileFormElement.querySelector('.popup__button');
+  const originalText = submitButton.textContent;
+  submitButton.textContent = 'Сохранение...';
+
+  const name = nameInput.value;
+  const about = jobInput.value;
+
+  updateUserInfo(name, about)
+    .then((userData) => {
+      profileTitle.textContent = userData.name;
+      profileDescription.textContent = userData.about;
+      closeModal(profilePopup);
+    })
+    .catch((err) => {
+      console.error('Ошибка при обновлении профиля:', err);
+    })
+    .finally(() => {
+      submitButton.textContent = originalText;
+    });
 }
+
 profileFormElement.addEventListener('submit', handleProfileFormSubmit);
 
 // @todo: Работа с карточками
@@ -85,42 +112,81 @@ cardCloseButton.addEventListener('click', () => closeModal(cardPopup));
 
 function handleCardFormSubmit(evt) {
   evt.preventDefault();
+
+  const submitButton = cardFormElement.querySelector('.popup__button');
+  const originalText = submitButton.textContent;
+  submitButton.textContent = 'Сохранение...';
+
   const name = placeNameInput.value;
   const link = placeLinkInput.value;
 
-  const newCard = createCard({ name, link });
-  placesList.prepend(newCard);
-  closeModal(cardPopup);
+  addNewCard(name, link)
+    .then((cardData) => {
+      const newCard = createCard(cardData, currentUserId);
+      placesList.prepend(newCard);
+      closeModal(cardPopup);
+      cardFormElement.reset(); 
+    })
+    .catch(err => {
+      console.error('Ошибка при добавлении карточки:', err);
+    })
+    .finally(() => {
+      submitButton.textContent = originalText;
+    });
 }
 cardFormElement.addEventListener('submit', handleCardFormSubmit);
 
-// Закрытие попапа с картинкой
 imageCloseButton.addEventListener('click', () => closeModal(imagePopup));
 
 // @todo: Функция создания карточки
-function createCard(cardData) {
+function createCard(cardData, userId) {
   const cardElement = cardTemplate.content.querySelector('.card').cloneNode(true);
   const cardImage = cardElement.querySelector('.card__image');
   const cardTitle = cardElement.querySelector('.card__title');
   const deleteButton = cardElement.querySelector('.card__delete-button');
   const likeButton = cardElement.querySelector('.card__like-button');
+  
+  const likeCount = cardElement.querySelector('.card__like-count');
+  if (likeCount) {
+    likeCount.textContent = cardData.likes.length;
+  }
+
 
   cardImage.src = cardData.link;
   cardImage.alt = cardData.name;
   cardTitle.textContent = cardData.name;
 
-  // Лайк
+  if (cardData.likes.some(user => user._id === userId)) {
+    likeButton.classList.add('card__like-button_is-active');
+  }
+
   likeButton.addEventListener('click', () => {
-    likeButton.classList.toggle('card__like-button_is-active');
+    const isLiked = likeButton.classList.contains('card__like-button_is-active');
+
+    const toggleLike = isLiked ? unlikeCard : likeCard;
+
+    toggleLike(cardData._id)
+      .then(updatedCard => {
+        likeButton.classList.toggle('card__like-button_is-active');
+        likeCount.textContent = updatedCard.likes.length;
+      })
+      .catch(err => {
+        console.error('Ошибка при переключении лайка:', err);
+      });
   });
 
-  // Удаление
-  deleteButton.addEventListener('click', (evt) => {
-    const card = evt.target.closest('.card');
-    card.remove();
-  });
+  if (cardData.owner._id !== userId) {
+    deleteButton.remove();
+  } else {
+    deleteButton.addEventListener('click', () => {
+      deleteCard(cardData._id)
+        .then(() => cardElement.remove())
+        .catch((err) => {
+          console.error('Ошибка при удалении карточки:', err);
+        });
+    });
+  }
 
-  // Открытие изображения
   cardImage.addEventListener('click', () => {
     popupImage.src = cardData.link;
     popupImage.alt = cardData.name;
@@ -190,7 +256,39 @@ function enableValidation() {
   });
 }
 
-// Очистка ошибок и сброс состояния кнопки при открытии формы
+avatarEditButton.addEventListener('click', () => {
+  avatarInput.value = '';
+  clearValidation(avatarFormElement);
+  openModal(avatarPopup);
+});
+
+avatarCloseButton.addEventListener('click', () => closeModal(avatarPopup));
+
+function handleAvatarFormSubmit(evt) {
+  evt.preventDefault();
+
+  const submitButton = avatarFormElement.querySelector('.popup__button');
+  const originalText = submitButton.textContent;
+  submitButton.textContent = 'Сохранение...';
+
+  const avatarUrl = avatarInput.value;
+
+  updateAvatar(avatarUrl)
+    .then((userData) => {
+      document.querySelector('.profile__image').style.backgroundImage = `url(${userData.avatar})`;
+      closeModal(avatarPopup);
+      avatarFormElement.reset();
+    })
+    .catch((err) => {
+      console.error('Ошибка при обновлении аватара:', err);
+    })
+    .finally(() => {
+      submitButton.textContent = originalText;
+    });
+}
+
+avatarFormElement.addEventListener('submit', handleAvatarFormSubmit);
+
 function clearValidation(formElement) {
   const inputList = Array.from(formElement.querySelectorAll('.popup__input'));
   const buttonElement = formElement.querySelector('.popup__button');
@@ -204,9 +302,21 @@ function clearValidation(formElement) {
 
 enableValidation();
 
-// @todo: Вывести карточки на страницу
-initialCards.forEach((cardData) => {
-  const card = createCard(cardData);
-  placesList.append(card);
-});
+let currentUserId = null;
+
+Promise.all([getUserInfo(), getInitialCards()])
+  .then(([userData, cards]) => {
+    currentUserId = userData._id;
+    profileTitle.textContent = userData.name;
+    profileDescription.textContent = userData.about;
+    document.querySelector('.profile__image').style.backgroundImage = `url(${userData.avatar})`;
+
+    cards.forEach((cardData) => {
+      const card = createCard(cardData, currentUserId);
+      placesList.append(card);
+    });
+  })
+  .catch((err) => {
+    console.error('Ошибка при загрузке данных с сервера:', err);
+  });
 
