@@ -50,7 +50,19 @@ function openModal(popup) {
 function closeModal(popup) {
   popup.classList.remove('popup_is-opened');
   document.removeEventListener('keydown', closeByEsc);
+  const form = popup.querySelector('.popup__form');
+  if (form){
+    clearValidation(form);
+  }
 }
+
+function isProfileChanged() {
+  return (
+    nameInput.value !== profileTitle.textContent ||
+    jobInput.value !== profileDescription.textContent
+  );
+}
+
 
 function closeByEsc(evt) {
   if (evt.key === 'Escape') {
@@ -61,7 +73,13 @@ function closeByEsc(evt) {
 
 function setupOverlayClose(popup) {
   popup.addEventListener('mousedown', (evt) => {
-    if (evt.target === popup) closeModal(popup);
+    if (evt.target === popup) {
+      closeModal(popup);
+      const form = popup.querySelector('.popup__form');
+      if (form){
+        clearValidation(form);
+      }
+    }
   });
 }
 [profilePopup, cardPopup, imagePopup].forEach(setupOverlayClose);
@@ -70,10 +88,19 @@ function setupOverlayClose(popup) {
 editButton.addEventListener('click', () => {
   nameInput.value = profileTitle.textContent;
   jobInput.value = profileDescription.textContent;
+  clearValidation(profileFormElement);
+
+  const inputList = Array.from(profileFormElement.querySelectorAll('.popup__input'));
+  const buttonElement = profileFormElement.querySelector('.popup__button');
+  toggleButtonState(inputList, buttonElement, true);
+
   openModal(profilePopup);
 });
 
-profileCloseButton.addEventListener('click', () => closeModal(profilePopup));
+profileCloseButton.addEventListener('click', () => {
+  closeModal(profilePopup)
+  clearValidation(profileFormElement)
+});
 
 function handleProfileFormSubmit(evt) {
   evt.preventDefault();
@@ -105,6 +132,13 @@ profileFormElement.addEventListener('submit', handleProfileFormSubmit);
 addCardButton.addEventListener('click', () => {
   placeNameInput.value = '';
   placeLinkInput.value = '';
+  clearValidation(cardFormElement);
+
+  const inputList = Array.from(cardFormElement.querySelectorAll('.popup__input'));
+  const buttonElement = cardFormElement.querySelector('.popup__button');
+  cardFormElement.reset()
+  toggleButtonState(inputList, buttonElement, true, isCardFormFilled);
+
   openModal(cardPopup);
 });
 
@@ -224,8 +258,15 @@ function hasInvalidInput(inputList) {
   return inputList.some((inputElement) => !inputElement.validity.valid);
 }
 
-function toggleButtonState(inputList, buttonElement) {
-  if (hasInvalidInput(inputList)) {
+function isCardFormFilled() {
+  return placeNameInput.value.trim() !== '' && placeLinkInput.value.trim() !== '';
+}
+
+function toggleButtonState(inputList, buttonElement, checkForChanges = false, changeCheckFunc = null) {
+  const hasInvalid = hasInvalidInput(inputList);
+  const isChanged =  !checkForChanges || (changeCheckFunc && changeCheckFunc());
+  
+  if (hasInvalid || !isChanged) {
     buttonElement.disabled = true;
     buttonElement.classList.add('popup__button_disabled');
   } else {
@@ -234,16 +275,16 @@ function toggleButtonState(inputList, buttonElement) {
   }
 }
 
-function setEventListeners(formElement) {
+function setEventListeners(formElement, checkForChanges = false, changeCheckFunc = null) {
   const inputList = Array.from(formElement.querySelectorAll('.popup__input'));
   const buttonElement = formElement.querySelector('.popup__button');
 
-  toggleButtonState(inputList, buttonElement);
+  toggleButtonState(inputList, buttonElement, checkForChanges);
 
   inputList.forEach((inputElement) => {
     inputElement.addEventListener('input', () => {
       checkInputValidity(formElement, inputElement);
-      toggleButtonState(inputList, buttonElement);
+      toggleButtonState(inputList, buttonElement, checkForChanges, changeCheckFunc);
     });
   });
 }
@@ -252,13 +293,27 @@ function enableValidation() {
   const formList = Array.from(document.querySelectorAll('.popup__form'));
   formList.forEach((formElement) => {
     formElement.setAttribute('novalidate', true);
-    setEventListeners(formElement);
+
+     if (formElement === profileFormElement) {
+      setEventListeners(formElement, true, isProfileChanged);
+    } else if (formElement === cardFormElement) {
+      setEventListeners(formElement, true, isCardFormFilled);
+    } else if (formElement === avatarFormElement) {
+      setEventListeners(formElement, true, () => avatarInput.value.trim() !== '');
+    } else {
+      setEventListeners(formElement);
+    }
   });
 }
 
 avatarEditButton.addEventListener('click', () => {
   avatarInput.value = '';
   clearValidation(avatarFormElement);
+
+  const inputList = Array.from(avatarFormElement.querySelectorAll('.popup__input'));
+  const buttonElement = avatarFormElement.querySelector('.popup__button');
+  toggleButtonState(inputList, buttonElement, true, () => avatarInput.value.trim() !== '');
+
   openModal(avatarPopup);
 });
 
@@ -296,6 +351,8 @@ function clearValidation(formElement) {
   inputList.forEach((inputElement) => {
     hideInputError(formElement, inputElement);
   });
+
+
 
   toggleButtonState(inputList, buttonElement);
 }
